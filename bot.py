@@ -1,51 +1,3 @@
-"""METIN2 NPC tıklayıcı.
-
-Sabit koordinat yerine NPC'yi ekranda GÖRÜNTÜDEN bulur: Metin2 NPC isimlerini
-sabit bir yeşil tonda (122, 231, 93) yazar. Bot ekran görüntüsündeki bu yeşil
-yazıları maskeler ve kayıtlı şablonla (sablon_npc.png) eşleştirir; eşleşen ismin
-biraz altına tıklar. Böylece karakter/kamera hareket etse de doğru yere basar.
-
-Tıkladıktan sonra açılan menüdeki 'Marketi aç' düğmesini (open-market.png)
-ekranda arar ve ona da tıklar. Düğme çıkmadıysa NPC'ye tıklanamamış demektir;
-düğme bulunana kadar NPC tıklaması tekrarlanır.
-
-Market açıldıktan sonra hancer.png ekranda aranır ve üzerine SAĞ tıklanır.
-Ardından 3 kez ESC ve envanter tuşu ("ı") gönderilir. Tuşlar tarama koduyla
-(scan code) gönderilir; Metin2 sanal tuş kodlarını görmezden geldiği için
-pyautogui.press ile ESC işlemiyordu. 1. envanter sekmesini arayıp tıklama adımı
-kapalı (ENVANTER_SEKMESI_TIKLA = False).
-
-Envanter 1. sekmede açık kabul edilir (ona tıklanmaz). Her sekmede parlayan yeni
-hançer varsa (new-hancer.png) bütün hücreler (5x9 ızgara) hızlıca taranıp parlama
-söndürülür, sonra o sekme söktürülür; 1. sekme bitince 2. sekmeye geçilir. Ardından yükseltme döngüsü: envanterde
-hançer kaldığı sürece çekiç (hammer.png), hançer (hancer.png) ve onay düğmesi
-(evet.png) tıklanır.
-
-Fare de tuşlar gibi SendInput ile sürülür: imleç gerçek hareket olaylarıyla
-taşınır (SetCursorPos hareket olayı üretmediği için oyun tıklamayı boşa
-harcıyordu), sonra basılı tutup bırakılır.
-
-Tıklamalar: NPC ve market düğmesine 1 sol tık, envanter sekmesine 2 sol tık,
-satın alırken eşyaya 1 saniye arayla 5 sağ tık.
-
-Kullanım:
-    python bot.py               -> NPC'yi bul ve 1 kez tıkla
-    python bot.py --loop        -> sürekli bul ve tıkla (Ctrl+C ile dur)
-    python bot.py --dene        -> tıklamadan sadece nereye basacağını yazar
-    python bot.py --sablon      -> ekrandaki NPC isminden yeni şablon oluşturur
-    python bot.py --esik 0.5    -> eşleşme eşiğini düşür/yükselt (varsayılan 0.6)
-    python bot.py --delay 3     -> geri sayımı 3 saniye yapar
-    python bot.py --liste       -> açık pencere başlıklarını listeler
-    python bot.py --pencere X   -> başka bir pencere başlığı kullan
-    python bot.py --ekranlar    -> bağlı ekranları (monitörleri) listeler
-    python bot.py --ekran 2     -> sadece 2. ekrandaki oyun penceresini kullan
-
-ÖNEMLİ: METIN2 yönetici olarak çalıştığı için bot da yönetici olmalı, yoksa
-Windows tıklamaları oyuna iletmez. baslat.bat bunu kendisi ister.
-
-Acil durdurma: fareyi ekranın sol üst köşesine (0,0) götür -> pyautogui FailSafe.
-"""
-
 import argparse
 import ctypes
 import subprocess
@@ -85,7 +37,7 @@ ESYA_ESIGI = 0.8
 # Yeni alınan eşyalar envanterde parlar (new-hancer.png); üstünden geçilince söner.
 # Tek tek aramak yerine envanterin bütün hücreleri hızlıca taranıyor.
 YENI_ESYA_ESIGI = 0.8
-HUCRE_BEKLEME = 0.05       # her hücrenin üstünde ne kadar durulacak
+HUCRE_BEKLEME = 0.03       # her hücrenin üstünde ne kadar durulacak
 IZGARA_TUR_SINIRI = 3      # parlayan kalırsa tarama kaç kez tekrarlanacak
 
 # Envanter ızgarası: başlık çubuğunun sol üst köşesine göre ilk hücrenin merkezi,
@@ -101,10 +53,10 @@ ESYA_ARAMA_SURESI = 5.0
 # Bir görüntü çıkana kadar beklerken taramalar arası süre. Her tarama zaten
 # ekran görüntüsü + şablon eşleştirme demek (~40 ms), o yüzden kısa tutulabilir:
 # beklemenin tamamı, aranan pencere çıktıktan sonra boşa geçen süredir.
-ARAMA_ARALIGI = 0.1
+ARAMA_ARALIGI = 0.04
 
-TUS_ARASI = 0.3
-TUS_BASILI_KALMA = 0.06  # tuşun basılı tutulma süresi (oyunun algılaması için)
+TUS_ARASI = 0.12
+TUS_BASILI_KALMA = 0.04  # tuşun basılı tutulma süresi (oyunun algılaması için)
 
 # 1. envanter sekmesini arayıp tıklama adımı (kapalıyken sadece ESC + "ı" gönderilir)
 ENVANTER_SEKMESI_TIKLA = True
@@ -127,7 +79,7 @@ ENVANTER_PENCERE_ESIGI = 0.8
 
 # Sekme geçmediyse kaç kez daha tıklanacak ve tıklamadan sonra ne kadar beklenecek
 ENVANTER_DENEMESI = 3
-SEKME_KONTROL_BEKLEME = 0.5
+SEKME_KONTROL_BEKLEME = 0.3
 
 # Seçili sekmenin görüntüsü değişir ama şablon eşleşmesi yüksek kalabilir; bu
 # yüzden geçiş, sekme bölgesindeki ortalama piksel değişiminden anlaşılıyor.
@@ -138,40 +90,42 @@ HAMMER_ESIGI = 0.8
 EVET_ESIGI = 0.8
 EVET_ARAMA_SURESI = 5.0
 EVET_TIK_KAYDIRMA = (8, 4)   # düğmenin merkezine göre sağa/aşağı kayma (piksel)
-EVET_YERLESME_BEKLEME = 0.15  # onay penceresi çizildikten sonra tıklamadan önce
+EVET_YERLESME_BEKLEME = 0.1  # onay penceresi çizildikten sonra tıklamadan önce
 EVET_DENEMESI = 3            # düğme kaybolmadıysa kaç kez daha tıklanacak
 # Tıklamadan sonra "pencere kapandı mı" kontrolü: önce kısa bir oturma payı,
 # sonra kapanana kadar tekrar tekrar bakılır. Kapanır kapanmaz devam edilir;
 # süre dolarsa tıklama işlememiş sayılıp tekrarlanır.
-EVET_KONTROL_ILK_BEKLEME = 0.1
+EVET_KONTROL_ILK_BEKLEME = 0.05
 EVET_KONTROL_BEKLEME = 0.5
-ADIM_BEKLEME = 0.15       # çekiç ve hançer tıklamaları arası
-YUKSELTME_BEKLEME = 1   # Evet'ten sonra sonucun oluşması için
+ADIM_BEKLEME = 0.1        # çekiç ve hançer tıklamaları arası
+YUKSELTME_BEKLEME = 0.3   # Evet'ten sonra sonucun oluşması için
 MAKS_YUKSELTME = 200      # tıklamalar işlemezse sonsuz döngüye girmemek için üst sınır
 TUR_HATA_SINIRI = 3       # arka arkaya kaç tur başarısız olursa durulacak
 
-# NPC'ye tıkladıktan sonra menünün açılması için beklenen süre (saniye)
-MENU_BEKLEME = 1.0
+# NPC'ye tıkladıktan sonra menünün açılması için beklenen süre (saniye).
+# Menü geç açılırsa sorun değil: "Marketi aç" düğmesi zaten çıkana kadar
+# aranıyor (ESYA_ARAMA_SURESI), bu yüzden burada beklemek şart değil.
+MENU_BEKLEME = 0.35
 
 # NPC, market düğmesi ve envanterdeki eşyalar tek sol tık alır.
 # Bu sayı yalnızca envanter sekmesi için kullanılıyor.
 TIK_SAYISI = 2
-TIK_ARASI = 0.15
+TIK_ARASI = 0.08
 
 # Oyun arayüzü imleci kendi takip ettiği için önce taşıyıp bekliyoruz, sonra
 # basıp bırakıyoruz; anlık bas-bırak olaylarını arayüz kaçırabiliyor.
-FARE_TASIMA_BEKLEME = 0.12
-TIK_BASILI_KALMA = 0.05
+FARE_TASIMA_BEKLEME = 0.07
+TIK_BASILI_KALMA = 0.04
 
 # İmleç hedefe ışınlanmaz, küçük adımlarla kaydırılır (gerçek fare gibi)
-KAYDIRMA_ADIMI = 18        # her adımda en fazla kaç piksel
-KAYDIRMA_BEKLEME = 0.012   # adımlar arası bekleme (saniye)
+KAYDIRMA_ADIMI = 24        # her adımda en fazla kaç piksel
+KAYDIRMA_BEKLEME = 0.006   # adımlar arası bekleme (saniye)
 KAYDIRMA_MAKS_ADIM = 400   # sonsuz döngüye karşı üst sınır
 # Uzak hedeflerde yolun tamamı adım adım gidilmez: oyunun gerçek harekete
 # ihtiyacı hedefin yakınında, uzaktaki düz yol boşa zaman. İmleç önce hedefin
 # bu kadar yakınına ışınlanır, kalan mesafe adım adım kapatılır. 0 = kapalı
 # (tüm yol adımlanır, eski davranış).
-KAYDIRMA_YAKIN_MESAFE = 150
+KAYDIRMA_YAKIN_MESAFE = 90
 
 # Tıklama yöntemi: "sendinput" (gerçek fare olayı) veya "mesaj" (pencereye
 # doğrudan Windows mesajı). Arayüz düğmeleri birinde çalışmazsa diğerini dene.
@@ -179,18 +133,18 @@ TIK_YONTEMI = "sendinput"
 AKTIF_PENCERE = None  # odak kontrolü ve mesaj yöntemi için gereken pencere
 
 # Oyun tekrar öne alındıktan sonra girdi göndermeden önce beklenecek süre
-ODAK_SONRASI_BEKLEME = 0.3
+ODAK_SONRASI_BEKLEME = 0.15
 
 # Eşyaya kaç sağ tık ve tıklar arası bekleme (saniye)
 SAG_TIK_SAYISI = 5
-SAG_TIK_ARASI = 1.0
+SAG_TIK_ARASI = 0.7
 
 # Market düğmesi çıkmadıysa NPC tıklaması bulunana kadar tekrarlanır;
 # denemeler arası bu kadar beklenir (saniye)
-DENEME_ARASI = 0.5
+DENEME_ARASI = 0.2
 
 # --loop modunda turlar arası bekleme (saniye)
-BEKLEME = 3.0
+BEKLEME = 0.8
 
 SABLON_DOSYASI = Path(__file__).with_name("sablon_npc.png")
 MARKET_DOSYASI = Path(__file__).with_name("open-market.png")
@@ -1211,20 +1165,24 @@ def envanter_hucreleri(pencere, pencere_sablon):
     return noktalar, skor
 
 
-def envanteri_tara(pencere, pencere_sablon, yeni_esya_sablon):
-    """Tüm envanter hücrelerinin üstünden hızlıca geçerek yeni eşya parlamasını söndürür.
+def envanteri_tara(pencere, pencere_sablon, yeni_esya_sablon, hucre_sayisi=None):
+    """Envanter hücrelerinin üstünden hızlıca geçerek yeni eşya parlamasını söndürür.
 
+    `hucre_sayisi` verilirse ilk turda sadece o kadar hücre gezilir: yeni alınan
+    hançerler envanterin baştaki boş kutularına düştüğü için 45 kutunun hepsini
+    dolaşmak gereksiz. Parlayan eşya yine de kalırsa (eşya beklenmedik bir
+    kutuya düşmüşse) sonraki turda envanterin tamamı taranır.
     """
-
     for tur in range(1, IZGARA_TUR_SINIRI + 1):
         noktalar, skor = envanter_hucreleri(pencere, pencere_sablon)
         if not noktalar:
             print(f"  envanter başlığı bulunamadı (en iyi {skor:.2f}) - tarama atlandı")
             return False
 
-        print(f"  envanter taranıyor ({len(noktalar)} hücre, {tur}. tur)")
+        taranacak = noktalar[:hucre_sayisi] if (tur == 1 and hucre_sayisi) else noktalar
+        print(f"  envanter taranıyor ({len(taranacak)}/{len(noktalar)} hücre, {tur}. tur)")
         odak_saglama()
-        for x, y in noktalar:
+        for x, y in taranacak:
             if durduruldu():
                 return False
             if not fare_kaydir(x, y):
@@ -1301,13 +1259,15 @@ def yukseltme_dongusu(pencere, hammer_sablon, esya_sablon, evet_sablon, esya_esi
 
 
 def sekmeleri_isle(pencere, envanter_pencere_sablon, hammer_sablon, esya_sablon,
-                   yeni_esya_sablon, evet_sablon, esya_esigi):
+                   yeni_esya_sablon, evet_sablon, esya_esigi, hancer_adedi=None):
     """Envanter sekmelerini sırayla gezip her birindeki hançerleri söker.
 
     İlk sekmeye tıklanmaz: envanter her zaman 1. sekmede açık kabul edilir. Her
     sekmede önce yeni eşya parlaması söndürülür, sonra yükseltme yapılır.
     Sekmedeki hançerler bitince bir sonrakine geçilir; hepsi bitince 1. sekmeye
     geri dönülür ki sıradaki tur yine oradan başlasın.
+
+    `hancer_adedi` parlama taramasını o kadar hücreyle sınırlar.
     """
     for sira, sekme_no in enumerate(SEKMELER):
         if durduruldu():
@@ -1319,7 +1279,8 @@ def sekmeleri_isle(pencere, envanter_pencere_sablon, hammer_sablon, esya_sablon,
         elif not sekmeye_gec(pencere, envanter_pencere_sablon, sekme_no):
             return False
 
-        if not envanteri_tara(pencere, envanter_pencere_sablon, yeni_esya_sablon):
+        if not envanteri_tara(pencere, envanter_pencere_sablon, yeni_esya_sablon,
+                              hancer_adedi):
             return False
         if not yukseltme_dongusu(pencere, hammer_sablon, esya_sablon, evet_sablon, esya_esigi):
             return False
@@ -1383,7 +1344,8 @@ def tur_calistir(pencere, npc_sablon, market_sablon, dukkan_kapat_sablon, esya_s
                 return False
 
             if not sekmeleri_isle(pencere, envanter_pencere_sablon, hammer_sablon,
-                                  esya_sablon, yeni_esya_sablon, evet_sablon, esya_esigi):
+                                  esya_sablon, yeni_esya_sablon, evet_sablon, esya_esigi,
+                                  hancer_adedi):
                 return False
             return True
 
