@@ -98,8 +98,10 @@ IZGARA_SATIR = 9
 # Market penceresinin açılması ve eşyanın görünmesi için beklenecek süre (saniye)
 ESYA_ARAMA_SURESI = 5.0
 
-# Bir görüntü çıkana kadar beklerken taramalar arası süre
-ARAMA_ARALIGI = 0.3
+# Bir görüntü çıkana kadar beklerken taramalar arası süre. Her tarama zaten
+# ekran görüntüsü + şablon eşleştirme demek (~40 ms), o yüzden kısa tutulabilir:
+# beklemenin tamamı, aranan pencere çıktıktan sonra boşa geçen süredir.
+ARAMA_ARALIGI = 0.1
 
 TUS_ARASI = 0.3
 TUS_BASILI_KALMA = 0.06  # tuşun basılı tutulma süresi (oyunun algılaması için)
@@ -136,10 +138,14 @@ HAMMER_ESIGI = 0.8
 EVET_ESIGI = 0.8
 EVET_ARAMA_SURESI = 5.0
 EVET_TIK_KAYDIRMA = (8, 4)   # düğmenin merkezine göre sağa/aşağı kayma (piksel)
-EVET_YERLESME_BEKLEME = 0.4  # onay penceresi çizildikten sonra tıklamadan önce
+EVET_YERLESME_BEKLEME = 0.15  # onay penceresi çizildikten sonra tıklamadan önce
 EVET_DENEMESI = 3            # düğme kaybolmadıysa kaç kez daha tıklanacak
-EVET_KONTROL_BEKLEME = 0.5   # tıklamadan sonra kontrol için bekleme
-ADIM_BEKLEME = 0.4        # çekiç ve hançer tıklamaları arası
+# Tıklamadan sonra "pencere kapandı mı" kontrolü: önce kısa bir oturma payı,
+# sonra kapanana kadar tekrar tekrar bakılır. Kapanır kapanmaz devam edilir;
+# süre dolarsa tıklama işlememiş sayılıp tekrarlanır.
+EVET_KONTROL_ILK_BEKLEME = 0.1
+EVET_KONTROL_BEKLEME = 0.5
+ADIM_BEKLEME = 0.15       # çekiç ve hançer tıklamaları arası
 YUKSELTME_BEKLEME = 1   # Evet'ten sonra sonucun oluşması için
 MAKS_YUKSELTME = 200      # tıklamalar işlemezse sonsuz döngüye girmemek için üst sınır
 TUR_HATA_SINIRI = 3       # arka arkaya kaç tur başarısız olursa durulacak
@@ -1118,11 +1124,12 @@ def beklemeleri_olcekle(carpan):
     """Tüm bekleme sürelerini çarpanla ölçekler (1'den büyük = daha yavaş/güvenli)."""
     global ADIM_BEKLEME, YUKSELTME_BEKLEME, EVET_YERLESME_BEKLEME, EVET_KONTROL_BEKLEME
     global FARE_TASIMA_BEKLEME, TIK_BASILI_KALMA, KAYDIRMA_BEKLEME, ARAMA_ARALIGI
-    global YENI_ESYA_BEKLEME, TUS_ARASI, SEKME_KONTROL_BEKLEME
+    global YENI_ESYA_BEKLEME, TUS_ARASI, SEKME_KONTROL_BEKLEME, EVET_KONTROL_ILK_BEKLEME
 
     ADIM_BEKLEME *= carpan
     YUKSELTME_BEKLEME *= carpan
     EVET_YERLESME_BEKLEME *= carpan
+    EVET_KONTROL_ILK_BEKLEME *= carpan
     EVET_KONTROL_BEKLEME *= carpan
     FARE_TASIMA_BEKLEME *= carpan
     TIK_BASILI_KALMA *= carpan
@@ -1155,11 +1162,18 @@ def evete_tikla(pencere, evet_sablon, x, y, skor, tur):
         tik_y = y + EVET_TIK_KAYDIRMA[1]
         print(f"  [{tur}] Evet ({x}, {y}) skor {skor:.2f} -> ({tik_x}, {tik_y}) sol tık")
         tek_sol_tik(tik_x, tik_y)
-        time.sleep(EVET_KONTROL_BEKLEME)
 
-        x2, y2, skor2 = goruntu_bul(pencere, evet_sablon, EVET_ESIGI)
-        if x2 is None:
-            return True
+        # Sabit süre beklemek yerine pencere kapanana kadar bakıyoruz: kapanır
+        # kapanmaz devam edilir, tam süre yalnızca tıklama işlemediyse harcanır.
+        time.sleep(EVET_KONTROL_ILK_BEKLEME)
+        bitis = time.time() + EVET_KONTROL_BEKLEME
+        while True:
+            x2, y2, skor2 = goruntu_bul(pencere, evet_sablon, EVET_ESIGI)
+            if x2 is None:
+                return True
+            if time.time() >= bitis:
+                break
+            time.sleep(ARAMA_ARALIGI)
         x, y, skor = x2, y2, skor2
         print(f"  [{tur}] Evet penceresi kapanmadı, tekrar ({deneme}/{EVET_DENEMESI})")
 
