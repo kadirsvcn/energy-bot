@@ -3,16 +3,45 @@
 Bot ayrı bir iş parçacığında çalışır:
   - "Duraklat" botu güvenli bir adımda bekletir, düğme "Devam et"e döner ve
     basınca bot kaldığı yerden sürer. Duraklamışken fare kullanıcıda kalır.
+    Kısayolu P; oyun öndeyken de işler.
   - "Kapat" botu tamamen durdurur; tekrar çalıştırmak için "Başlat" gerekir.
 Botun ekrana yazdığı her şey alttaki kayıt kutusuna düşer.
 """
 
+import ctypes
 import queue
 import threading
 import tkinter as tk
 from tkinter import ttk
 
 import bot
+
+# Duraklat/devam kısayolu. Harflerin sanal tuş kodu büyük harfin ASCII değeri.
+KISAYOL_TUSU = "P"
+KISAYOL_VK = ord(KISAYOL_TUSU)
+KISAYOL_YOKLAMA = 50  # tuşa bakma aralığı (ms)
+VK_CONTROL = 0x11
+VK_MENU = 0x12  # ALT
+
+DURAKLAT_YAZISI = f"Duraklat ({KISAYOL_TUSU})"
+DEVAM_YAZISI = f"Devam et ({KISAYOL_TUSU})"
+
+_user32 = ctypes.windll.user32
+_user32.GetAsyncKeyState.restype = ctypes.c_short
+
+
+def tus_durumu(vk):
+    """(şu an basılı mı, son bakıştan beri basıldı mı) döner. Odaktan bağımsız.
+
+    Düşük bit "bu çağrıdan önce basıldı" demek: iki yoklama arasına sıkışan
+    hızlı bir dokunuş yalnızca 'şu an basılı' bilgisine bakınca kaçardı.
+    """
+    durum = _user32.GetAsyncKeyState(vk)
+    return bool(durum & 0x8000), bool(durum & 0x0001)
+
+
+def tus_basili(vk):
+    return tus_durumu(vk)[0]
 
 
 class Yazici:
@@ -35,6 +64,8 @@ class Arayuz:
         self.kuyruk = queue.Queue()
         self.is_parcacigi = None
         self.calisma_bilgisi = ""  # durum satırında "Devam et" sonrası geri yazılır
+        self.kisayol_basiliydi = False
+        self.degistirici_basiliydi = False
 
         kok.title("Energy Bot")
         kok.geometry("720x520")
@@ -74,7 +105,7 @@ class Arayuz:
         dugmeler.pack(fill="x")
         self.baslat_dugmesi = ttk.Button(dugmeler, text="Başlat", command=self.baslat)
         self.baslat_dugmesi.pack(side="left")
-        self.duraklat_dugmesi = ttk.Button(dugmeler, text="Duraklat",
+        self.duraklat_dugmesi = ttk.Button(dugmeler, text=DURAKLAT_YAZISI,
                                            command=self.duraklat_devam, state="disabled")
         self.duraklat_dugmesi.pack(side="left", padx=6)
         self.kapat_dugmesi = ttk.Button(dugmeler, text="Kapat", command=self.botu_kapat,
@@ -95,7 +126,10 @@ class Arayuz:
 
         kok.protocol("WM_DELETE_WINDOW", self.pencereyi_kapat)
         self.kuyrugu_isle()
+        self.kisayolu_izle()
 
+        self.yaz(f"Kısayol: {KISAYOL_TUSU} = duraklat / devam et"
+                 " (bot çalışırken, oyun öndeyken de geçerli)\n")
         if not bot.yonetici_mi():
             self.yaz("! Bot yönetici yetkisiyle çalışmıyor. Oyun yönetici olarak\n"
                      "  çalışıyorsa girdiler oyuna ulaşmaz; arayuz.bat ile açın.\n")
@@ -120,6 +154,29 @@ class Arayuz:
         except queue.Empty:
             pass
         self.kok.after(100, self.kuyrugu_isle)
+
+    def bot_calisiyor(self):
+        return self.is_parcacigi is not None and self.is_parcacigi.is_alive()
+
+    def kisayolu_izle(self):
+        """P tuşuna basılmasını izler; basıldıysa duraklatır/devam ettirir.
+
+        Tuşu RegisterHotKey ile kilitlemiyoruz, sadece basılı mı diye bakıyoruz:
+        böylece P oyuna da ulaşmaya devam eder, kimseden çalınmaz. Kısayol
+        yalnızca bot çalışırken iş görür; basılı tutmak bir kez sayılır.
+
+        Ctrl/ALT ile birlikte basıldığında (Ctrl+P gibi) sayılmaz; değiştirici
+        bir önceki bakışta basılıysa da atlanır, çünkü tuş bırakıldıktan sonra
+        hangi değiştiriciyle basıldığı artık okunamıyor.
+        """
+        basili, yeni_basildi = tus_durumu(KISAYOL_VK)
+        degistirici = tus_basili(VK_CONTROL) or tus_basili(VK_MENU)
+        tetik = (yeni_basildi or (basili and not self.kisayol_basiliydi))
+        if tetik and not degistirici and not self.degistirici_basiliydi and self.bot_calisiyor():
+            self.duraklat_devam()
+        self.kisayol_basiliydi = basili
+        self.degistirici_basiliydi = degistirici
+        self.kok.after(KISAYOL_YOKLAMA, self.kisayolu_izle)
 
     def ekranlari_yukle(self):
         """Ekran listesini tazeler. 'Otomatik' = oyun hangi ekrandaysa orası."""
@@ -163,7 +220,7 @@ class Arayuz:
         self.calisma_bilgisi = (f"{hancer} hançer, {'sonsuz' if tur == 0 else tur} tur, "
                                 f"{'otomatik ekran' if ekran_no is None else f'ekran {ekran_no}'}")
         self.baslat_dugmesi.configure(state="disabled")
-        self.duraklat_dugmesi.configure(state="normal", text="Duraklat")
+        self.duraklat_dugmesi.configure(state="normal", text=DURAKLAT_YAZISI)
         self.kapat_dugmesi.configure(state="normal")
         self.durum.set(f"Çalışıyor - {self.calisma_bilgisi}")
 
@@ -188,7 +245,7 @@ class Arayuz:
 
     def bitti(self):
         self.baslat_dugmesi.configure(state="normal")
-        self.duraklat_dugmesi.configure(state="disabled", text="Duraklat")
+        self.duraklat_dugmesi.configure(state="disabled", text=DURAKLAT_YAZISI)
         self.kapat_dugmesi.configure(state="disabled")
         self.durum.set("Kapatıldı" if bot.durdurma_istendi() else "Bitti")
 
@@ -196,18 +253,18 @@ class Arayuz:
         """Aynı düğme: çalışırken duraklatır, duraklamışken kaldığı yerden sürdürür."""
         if bot.duraklatildi():
             bot.devam_et()
-            self.duraklat_dugmesi.configure(text="Duraklat")
+            self.duraklat_dugmesi.configure(text=DURAKLAT_YAZISI)
             self.durum.set(f"Çalışıyor - {self.calisma_bilgisi}")
         else:
             bot.duraklat()
-            self.duraklat_dugmesi.configure(text="Devam et")
+            self.duraklat_dugmesi.configure(text=DEVAM_YAZISI)
             self.durum.set("Duraklatılıyor... (bulunduğu adımı bitirip bekleyecek)")
 
     def botu_kapat(self):
         """Botu tamamen durdurur; devam etmek yerine baştan başlatmak gerekir."""
         bot.durdur()
         self.durum.set("Kapatılıyor... (bulunduğu adımı bitiriyor)")
-        self.duraklat_dugmesi.configure(state="disabled", text="Duraklat")
+        self.duraklat_dugmesi.configure(state="disabled", text=DURAKLAT_YAZISI)
         self.kapat_dugmesi.configure(state="disabled")
 
     def pencereyi_kapat(self):

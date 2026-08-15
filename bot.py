@@ -161,6 +161,11 @@ TIK_BASILI_KALMA = 0.05
 KAYDIRMA_ADIMI = 18        # her adımda en fazla kaç piksel
 KAYDIRMA_BEKLEME = 0.012   # adımlar arası bekleme (saniye)
 KAYDIRMA_MAKS_ADIM = 400   # sonsuz döngüye karşı üst sınır
+# Uzak hedeflerde yolun tamamı adım adım gidilmez: oyunun gerçek harekete
+# ihtiyacı hedefin yakınında, uzaktaki düz yol boşa zaman. İmleç önce hedefin
+# bu kadar yakınına ışınlanır, kalan mesafe adım adım kapatılır. 0 = kapalı
+# (tüm yol adımlanır, eski davranış).
+KAYDIRMA_YAKIN_MESAFE = 150
 
 # Tıklama yöntemi: "sendinput" (gerçek fare olayı) veya "mesaj" (pencereye
 # doğrudan Windows mesajı). Arayüz düğmeleri birinde çalışmazsa diğerini dene.
@@ -794,12 +799,35 @@ def fare_tasi(x, y):
     _fare_olayi(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK, nx, ny)
 
 
+def _yakina_atla(hedef_x, hedef_y):
+    """Hedef uzaksa imleci hedefin KAYDIRMA_YAKIN_MESAFE kadar yakınına ışınlar.
+
+    Kalan yol adım adım kapatıldığı için oyun yine hedefe doğru gerçek bir
+    hareket görüyor; uzaktaki düz yol için 50-60 adım harcanmıyor.
+    """
+    if not KAYDIRMA_YAKIN_MESAFE:
+        return
+
+    simdi = pyautogui.position()
+    dx, dy = hedef_x - simdi.x, hedef_y - simdi.y
+    uzaklik = max(abs(dx), abs(dy))
+    if uzaklik <= KAYDIRMA_YAKIN_MESAFE:
+        return
+
+    oran = (uzaklik - KAYDIRMA_YAKIN_MESAFE) / uzaklik
+    fare_tasi(simdi.x + int(dx * oran), simdi.y + int(dy * oran))
+    time.sleep(KAYDIRMA_BEKLEME)
+
+
 def fare_kaydir(hedef_x, hedef_y):
     """İmleci ışınlamadan, bağıl adımlarla kaydırarak hedefe götürür.
 
     Oyun fareyi bağıl hareketten okuduğu için mutlak konuma atlamak yerine
-    gerçek fare gibi adım adım ilerliyoruz. Hedefe ulaşınca True döner.
+    gerçek fare gibi adım adım ilerliyoruz. Uzun yolun sadece son bölümü
+    adımlanır (bkz. _yakina_atla). Hedefe ulaşınca True döner.
     """
+    _yakina_atla(hedef_x, hedef_y)
+
     for _ in range(KAYDIRMA_MAKS_ADIM):
         simdi = pyautogui.position()
         dx, dy = hedef_x - simdi.x, hedef_y - simdi.y
