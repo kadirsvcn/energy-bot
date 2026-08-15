@@ -37,6 +37,8 @@ Kullanım:
     python bot.py --delay 3     -> geri sayımı 3 saniye yapar
     python bot.py --liste       -> açık pencere başlıklarını listeler
     python bot.py --pencere X   -> başka bir pencere başlığı kullan
+    python bot.py --ekranlar    -> bağlı ekranları (monitörleri) listeler
+    python bot.py --ekran 2     -> sadece 2. ekrandaki oyun penceresini kullan
 
 ÖNEMLİ: METIN2 yönetici olarak çalıştığı için bot da yönetici olmalı, yoksa
 Windows tıklamaları oyuna iletmez. baslat.bat bunu kendisi ister.
@@ -57,6 +59,7 @@ import cv2
 import numpy as np
 import pyautogui
 import pygetwindow as gw
+from PIL import ImageGrab
 
 # Odaklanılacak pencere başlığı (önce tam eşleşme, bulunamazsa içinde geçen aranır)
 PENCERE_ADI = "METIN2"
@@ -193,24 +196,77 @@ EVET_DOSYASI = Path(__file__).with_name("evet.png")
 # Fare sol üst köşeye giderse programı durdur
 pyautogui.FAILSAFE = True
 
-# Arayüzdeki "Durdur" düğmesi bunu kurar; döngüler her adımda buna bakar.
+# Arayüzdeki "Kapat" düğmesi bunu kurar; döngüler her adımda buna bakar.
 DURDURMA_BAYRAGI = threading.Event()
+# Arayüzdeki "Duraklat" düğmesi bunu kurar; bot kaldığı yerde bekler.
+DURAKLATMA_BAYRAGI = threading.Event()
+DURAKLAMA_YOKLAMA = 0.1  # duraklamadan çıkıldı mı diye bakma aralığı (saniye)
 
 
 def durduruldu():
+    """Bu adımda çıkılmalı mı? Duraklatıldıysa ÖNCE burada bekler.
+
+    Döngüler zaten her adımda buna bakıyor; duraklatma da bu yüzden buraya
+    kondu: her kontrol noktası aynı zamanda güvenli bir duraklama noktası
+    oluyor ve bot bir tıklama dizisinin ortasında donup kalmıyor.
+    """
+    duraklamayi_bekle()
     return DURDURMA_BAYRAGI.is_set()
 
 
+def durdurma_istendi():
+    """Durdurma bayrağını beklemeden okur (arayüz iş parçacığı için)."""
+    return DURDURMA_BAYRAGI.is_set()
+
+
+def duraklamayi_bekle():
+    """Duraklatıldıysa 'devam' ya da 'kapat' gelene kadar bekler.
+
+    Beklerken hiçbir girdi gönderilmediği için fare ve klavye kullanıcıda
+    kalır; devam edilince bot kaldığı adımdan sürer. Duraklamada geçen
+    saniyeyi döner: süre sınırlı aramalar bu kadar uzatılır, yoksa duraklama
+    boyunca zaman aşımına uğrarlardı.
+    """
+    if not DURAKLATMA_BAYRAGI.is_set() or DURDURMA_BAYRAGI.is_set():
+        return 0.0
+    print("\n|| Duraklatıldı - 'Devam et' bekleniyor (fare serbest).")
+    basladi = time.time()
+    while DURAKLATMA_BAYRAGI.is_set() and not DURDURMA_BAYRAGI.is_set():
+        time.sleep(DURAKLAMA_YOKLAMA)
+    print("|| Kapatılıyor." if DURDURMA_BAYRAGI.is_set() else "|| Devam ediliyor.\n")
+    return time.time() - basladi
+
+
 def durdur():
+    """Botu tamamen durdurur (duraklamış olsa bile beklemeden çıkar)."""
     DURDURMA_BAYRAGI.set()
+    DURAKLATMA_BAYRAGI.clear()
 
 
 def durdurmayi_sifirla():
     DURDURMA_BAYRAGI.clear()
+    DURAKLATMA_BAYRAGI.clear()
+
+
+def duraklat():
+    DURAKLATMA_BAYRAGI.set()
+
+
+def devam_et():
+    DURAKLATMA_BAYRAGI.clear()
+
+
+def duraklatildi():
+    return DURAKLATMA_BAYRAGI.is_set()
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 SW_RESTORE = 9
+# Sanal masaüstü (tüm ekranların kapladığı dikdörtgen) ölçüleri
+SM_XVIRTUALSCREEN = 76
+SM_YVIRTUALSCREEN = 77
+SM_CXVIRTUALSCREEN = 78
+SM_CYVIRTUALSCREEN = 79
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 TOKEN_QUERY = 0x0008
 TOKEN_INTEGRITY_LEVEL = 25
@@ -224,6 +280,7 @@ INPUT_MOUSE = 0
 
 MOUSEEVENTF_MOVE = 0x0001
 MOUSEEVENTF_ABSOLUTE = 0x8000
+MOUSEEVENTF_VIRTUALDESK = 0x4000  # mutlak konum TÜM ekranlara göre ölçeklensin
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 MOUSEEVENTF_RIGHTDOWN = 0x0008
@@ -249,6 +306,90 @@ TARAMA_KODLARI = {
     "i": 0x27,     # Türkçe Q klavyede "i" (US klavyede ; tuşunun yeri)
     "enter": 0x1C,
 }
+
+
+# --------------------------------------------------------------------------
+# Ekranlar (monitörler)
+# --------------------------------------------------------------------------
+
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+
+_MONITORENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong,
+                                      ctypes.POINTER(wintypes.RECT), ctypes.c_double)
+MONITORINFOF_PRIMARY = 0x1
+
+
+def sanal_ekran():
+    """Tüm ekranların kapladığı dikdörtgen: (sol, ust, genislik, yukseklik).
+
+    İkinci ekran birincinin sağındaysa sol=0 genislik=3840 gibi; solundaysa
+    sol negatif olur. Fare ve ekran görüntüsü hesapları buna göre yapılır.
+    """
+    return (user32.GetSystemMetrics(SM_XVIRTUALSCREEN),
+            user32.GetSystemMetrics(SM_YVIRTUALSCREEN),
+            user32.GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+
+
+def ekranlar():
+    """Bağlı ekranları soldan sağa sıralı liste olarak döner.
+
+    Her öğe: {"no": 1'den başlayan sıra, "sol", "ust", "genislik",
+    "yukseklik", "birincil"}.
+    """
+    bulunan = []
+
+    def _topla(tutamac, _hdc, _rect, _veri):
+        bilgi = _MONITORINFO()
+        bilgi.cbSize = ctypes.sizeof(_MONITORINFO)
+        if user32.GetMonitorInfoW(tutamac, ctypes.byref(bilgi)):
+            r = bilgi.rcMonitor
+            bulunan.append({"sol": r.left, "ust": r.top,
+                            "genislik": r.right - r.left,
+                            "yukseklik": r.bottom - r.top,
+                            "birincil": bool(bilgi.dwFlags & MONITORINFOF_PRIMARY)})
+        return 1
+
+    user32.EnumDisplayMonitors(0, 0, _MONITORENUMPROC(_topla), 0)
+    bulunan.sort(key=lambda e: (e["sol"], e["ust"]))
+    for sira, ekran in enumerate(bulunan, start=1):
+        ekran["no"] = sira
+    return bulunan
+
+
+def ekran_etiketi(ekran):
+    """Arayüzde ve kayıtta gösterilecek kısa ekran tanımı."""
+    return (f"Ekran {ekran['no']} - {ekran['genislik']}x{ekran['yukseklik']} "
+            f"@({ekran['sol']},{ekran['ust']})" + (" (birincil)" if ekran["birincil"] else ""))
+
+
+def ekranlari_listele():
+    print("Bağlı ekranlar:")
+    for ekran in ekranlar():
+        print(f"  - {ekran_etiketi(ekran)}")
+
+
+def ekranda_mi(pencere, ekran):
+    """Pencerenin MERKEZİ bu ekranın içindeyse True.
+
+    Merkeze bakıyoruz: pencere iki ekrana taşmışsa hangi ekranda 'durduğu'
+    kenarlarına değil ortasına göre belirlensin.
+    """
+    mx = pencere.left + pencere.width // 2
+    my = pencere.top + pencere.height // 2
+    return (ekran["sol"] <= mx < ekran["sol"] + ekran["genislik"]
+            and ekran["ust"] <= my < ekran["ust"] + ekran["yukseklik"])
+
+
+def pencerenin_ekrani(pencere):
+    """Pencerenin bulunduğu ekranı döner, hiçbirine denk gelmiyorsa None."""
+    for ekran in ekranlar():
+        if ekranda_mi(pencere, ekran):
+            return ekran
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -309,9 +450,19 @@ def pencereleri_listele():
             print(f"  - {baslik}")
 
 
-def pencere_bul(ad):
-    """Önce tam eşleşme, sonra 'içinde geçiyor' araması yapar."""
+def pencere_bul(ad, ekran_no=None):
+    """Önce tam eşleşme, sonra 'içinde geçiyor' araması yapar.
+
+    `ekran_no` verilirse sadece o ekrandaki pencereler aranır; iki oyun
+    penceresi açıkken hangisinin sürüleceği böyle seçilir. O ekranda uygun
+    pencere yoksa None döner (yanlış ekrandakine sessizce geçilmez).
+    """
     pencereler = [w for w in gw.getAllWindows() if w.title.strip()]
+    if ekran_no is not None:
+        hedef = next((e for e in ekranlar() if e["no"] == ekran_no), None)
+        if hedef is None:
+            return None
+        pencereler = [w for w in pencereler if ekranda_mi(w, hedef)]
     for w in pencereler:
         if w.title.strip().lower() == ad.lower():
             return w
@@ -368,9 +519,17 @@ def odakla(pencere):
 # --------------------------------------------------------------------------
 
 def pencere_goruntusu(pencere):
-    """Pencerenin ekran görüntüsünü RGB dizi olarak döner."""
-    kare = pyautogui.screenshot(region=(pencere.left, pencere.top,
-                                        pencere.width, pencere.height))
+    """Pencerenin ekran görüntüsünü RGB dizi olarak döner.
+
+    pyautogui.screenshot() yalnızca BİRİNCİL ekranı alıp bölgeyi ondan
+    kırpıyor; oyun ikinci ekranda olunca kare siyah geliyor ve hiçbir şablon
+    bulunamıyordu. Bu yüzden doğrudan tüm ekranları kapsayan görüntüden
+    (all_screens=True) kırpıyoruz; koordinatlar sanal masaüstü koordinatları.
+    """
+    kare = ImageGrab.grab(bbox=(pencere.left, pencere.top,
+                                pencere.left + pencere.width,
+                                pencere.top + pencere.height),
+                          all_screens=True)
     return np.array(kare.convert("RGB"))
 
 
@@ -522,6 +681,7 @@ def bekleyip_bul(pencere, sablon, esik, sure):
     bitis = time.time() + sure
     en_iyi = 0.0
     while True:
+        bitis += duraklamayi_bekle()  # duraklamada geçen süre aramadan sayılmasın
         x, y, skor = goruntu_bul(pencere, sablon, esik)
         en_iyi = max(en_iyi, skor)
         if x is not None:
@@ -624,11 +784,14 @@ def fare_tasi(x, y):
 
     pyautogui SetCursorPos kullanıyor; o çağrı hareket olayı üretmediği için
     oyun imlecin yerini güncellemiyor ve tıklama boşa gidiyordu.
+
+    Mutlak konum BİRİNCİL ekrana göre değil sanal masaüstüne göre (VIRTUALDESK)
+    ölçekleniyor; yoksa imleç ikinci ekrandaki hedefe hiç ulaşamıyor.
     """
-    genislik, yukseklik = pyautogui.size()
-    nx = int(round(x * 65535 / (genislik - 1)))
-    ny = int(round(y * 65535 / (yukseklik - 1)))
-    _fare_olayi(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, nx, ny)
+    sol, ust, genislik, yukseklik = sanal_ekran()
+    nx = int(round((x - sol) * 65535 / max(genislik - 1, 1)))
+    ny = int(round((y - ust) * 65535 / max(yukseklik - 1, 1)))
+    _fare_olayi(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK, nx, ny)
 
 
 def fare_kaydir(hedef_x, hedef_y):
@@ -685,12 +848,18 @@ def odak_saglama():
 
 
 def failsafe_kontrol():
-    """Fare ekranın bir köşesindeyse dur (pyautogui'nin acil durdurmasının karşılığı)."""
+    """Fare tüm ekranların dış köşelerinden birindeyse dur.
+
+    Köşeler sanal masaüstünün dışına göre alınıyor: iki ekran arasındaki iç
+    köşeler (ör. 1919,0) sayılmaz, yoksa imleç ekranlar arası geçerken bota
+    yanlışlıkla dur denmiş olurdu.
+    """
     if not pyautogui.FAILSAFE:
         return
     x, y = pyautogui.position()
-    genislik, yukseklik = pyautogui.size()
-    kose = ((0, 0), (genislik - 1, 0), (0, yukseklik - 1), (genislik - 1, yukseklik - 1))
+    sol, ust, genislik, yukseklik = sanal_ekran()
+    sag, alt = sol + genislik - 1, ust + yukseklik - 1
+    kose = ((sol, ust), (sag, ust), (sol, alt), (sag, alt))
     if (x, y) in kose:
         raise pyautogui.FailSafeException("Fare köşeye götürüldü.")
 
@@ -938,6 +1107,8 @@ def beklemeleri_olcekle(carpan):
 
 def geri_sayim(saniye):
     for kalan in range(saniye, 0, -1):
+        if durduruldu():
+            return
         print(f"Başlıyor... {kalan}")
         time.sleep(1)
 
@@ -1182,22 +1353,39 @@ def tur_calistir(pencere, npc_sablon, market_sablon, dukkan_kapat_sablon, esya_s
 
 
 def hazirla(pencere_adi=PENCERE_ADI, esik=ESIK, market_esigi=MARKET_ESIGI,
-            esya_esigi=ESYA_ESIGI, envanter_esigi=ENVANTER_PENCERE_ESIGI):
+            esya_esigi=ESYA_ESIGI, envanter_esigi=ENVANTER_PENCERE_ESIGI,
+            ekran_no=None):
     """Oyun penceresini bulur ve tüm şablonları yükler.
+
+    `ekran_no` None ise oyun hangi ekranda açıksa o kullanılır; sayı verilirse
+    sadece o ekrandaki pencere aranır.
 
     (pencere, sablonlar) döner; bir eksik varsa (None, None).
     """
     global AKTIF_PENCERE
 
-    pencere = pencere_bul(pencere_adi)
+    pencere = pencere_bul(pencere_adi, ekran_no)
     if pencere is None:
-        print(f"'{pencere_adi}' penceresi bulunamadı. Oyun açık mı?\n")
+        if ekran_no is not None:
+            print(f"'{pencere_adi}' penceresi {ekran_no}. ekranda bulunamadı.")
+            baska = pencere_bul(pencere_adi)
+            if baska is not None:
+                ekran = pencerenin_ekrani(baska)
+                nerede = f"{ekran['no']}. ekranda" if ekran else "ekranların dışında"
+                print(f"  (oyun {nerede} görünüyor: konum=({baska.left}, {baska.top}))")
+            print()
+        else:
+            print(f"'{pencere_adi}' penceresi bulunamadı. Oyun açık mı?\n")
+        ekranlari_listele()
         pencereleri_listele()
         return None, None
     AKTIF_PENCERE = pencere
 
+    ekran = pencerenin_ekrani(pencere)
+    ekran_bilgisi = ekran_etiketi(ekran) if ekran else "ekran belirlenemedi"
     print(f"Pencere: '{pencere.title}'  konum=({pencere.left}, {pencere.top})  "
           f"boyut={pencere.width}x{pencere.height}")
+    print(f"Çalışılan ekran: {ekran_bilgisi}")
     seviye = pencere_butunluk_seviyesi(pencere)
     seviye_adi = {BUTUNLUK_ORTA: "orta", BUTUNLUK_YUKSEK: "yüksek (yönetici)"}.get(seviye, seviye)
     print(f"Oyunun bütünlük seviyesi: {seviye_adi} | bot yönetici mi: {yonetici_mi()}")
@@ -1281,6 +1469,11 @@ def main():
                         help="envanter penceresi (başlık) eşleşme eşiği (0-1)")
     parser.add_argument("--pencere", default=PENCERE_ADI, help="odaklanılacak pencere başlığı")
     parser.add_argument("--liste", action="store_true", help="açık pencere başlıklarını listele ve çık")
+    parser.add_argument("--ekran", type=int, default=None,
+                        help="oyunun aranacağı ekran no (1 = soldaki); boş bırakılırsa"
+                             " pencere hangi ekrandaysa orası kullanılır")
+    parser.add_argument("--ekranlar", action="store_true",
+                        help="bağlı ekranları listele ve çık")
 
     parser.add_argument("--isaretle", metavar="DOSYA.png",
                         help="şablonun bulunduğu noktayı isaret.png'ye çizip çıkar")
@@ -1299,13 +1492,19 @@ def main():
                              " 0.5 = iki kat hızlı")
     args = parser.parse_args()
 
+    if args.ekranlar:
+        ekranlari_listele()
+        return
+
     if args.liste:
         pencereleri_listele()
         return
 
-    pencere = pencere_bul(args.pencere)
+    pencere = pencere_bul(args.pencere, args.ekran)
     if pencere is None:
-        print(f"'{args.pencere}' penceresi bulunamadı. Oyun açık mı?\n")
+        nerede = f" {args.ekran}. ekranda" if args.ekran else ""
+        print(f"'{args.pencere}' penceresi{nerede} bulunamadı. Oyun açık mı?\n")
+        ekranlari_listele()
         pencereleri_listele()
         return
 
@@ -1359,7 +1558,7 @@ def main():
 
 
     _, sablonlar = hazirla(args.pencere, args.esik, args.market_esik,
-                           args.esya_esik, args.envanter_esik)
+                           args.esya_esik, args.envanter_esik, args.ekran)
     if sablonlar is None:
         return
 
