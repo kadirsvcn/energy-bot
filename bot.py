@@ -37,7 +37,7 @@ ESYA_ESIGI = 0.8
 # Yeni alınan eşyalar envanterde parlar (new-hancer.png); üstünden geçilince söner.
 # Tek tek aramak yerine envanterin bütün hücreleri hızlıca taranıyor.
 YENI_ESYA_ESIGI = 0.8
-HUCRE_BEKLEME = 0.03       # her hücrenin üstünde ne kadar durulacak
+HUCRE_BEKLEME = 0.04       # her hücrenin üstünde ne kadar durulacak
 IZGARA_TUR_SINIRI = 3      # parlayan kalırsa tarama kaç kez tekrarlanacak
 
 # Envanter ızgarası: başlık çubuğunun sol üst köşesine göre ilk hücrenin merkezi,
@@ -53,10 +53,10 @@ ESYA_ARAMA_SURESI = 5.0
 # Bir görüntü çıkana kadar beklerken taramalar arası süre. Her tarama zaten
 # ekran görüntüsü + şablon eşleştirme demek (~40 ms), o yüzden kısa tutulabilir:
 # beklemenin tamamı, aranan pencere çıktıktan sonra boşa geçen süredir.
-ARAMA_ARALIGI = 0.04
+ARAMA_ARALIGI = 0.06
 
-TUS_ARASI = 0.12
-TUS_BASILI_KALMA = 0.04  # tuşun basılı tutulma süresi (oyunun algılaması için)
+TUS_ARASI = 0.16
+TUS_BASILI_KALMA = 0.05  # tuşun basılı tutulma süresi (oyunun algılaması için)
 
 # 1. envanter sekmesini arayıp tıklama adımı (kapalıyken sadece ESC + "ı" gönderilir)
 ENVANTER_SEKMESI_TIKLA = True
@@ -79,7 +79,7 @@ ENVANTER_PENCERE_ESIGI = 0.8
 
 # Sekme geçmediyse kaç kez daha tıklanacak ve tıklamadan sonra ne kadar beklenecek
 ENVANTER_DENEMESI = 3
-SEKME_KONTROL_BEKLEME = 0.3
+SEKME_KONTROL_BEKLEME = 0.4
 
 # Seçili sekmenin görüntüsü değişir ama şablon eşleşmesi yüksek kalabilir; bu
 # yüzden geçiş, sekme bölgesindeki ortalama piksel değişiminden anlaşılıyor.
@@ -90,42 +90,42 @@ HAMMER_ESIGI = 0.8
 EVET_ESIGI = 0.8
 EVET_ARAMA_SURESI = 5.0
 EVET_TIK_KAYDIRMA = (8, 4)   # düğmenin merkezine göre sağa/aşağı kayma (piksel)
-EVET_YERLESME_BEKLEME = 0.1  # onay penceresi çizildikten sonra tıklamadan önce
+EVET_YERLESME_BEKLEME = 0.15  # onay penceresi çizildikten sonra tıklamadan önce
 EVET_DENEMESI = 3            # düğme kaybolmadıysa kaç kez daha tıklanacak
 # Tıklamadan sonra "pencere kapandı mı" kontrolü: önce kısa bir oturma payı,
 # sonra kapanana kadar tekrar tekrar bakılır. Kapanır kapanmaz devam edilir;
 # süre dolarsa tıklama işlememiş sayılıp tekrarlanır.
-EVET_KONTROL_ILK_BEKLEME = 0.05
-EVET_KONTROL_BEKLEME = 0.5
-ADIM_BEKLEME = 0.1        # çekiç ve hançer tıklamaları arası
-YUKSELTME_BEKLEME = 0.3   # Evet'ten sonra sonucun oluşması için
+EVET_KONTROL_ILK_BEKLEME = 0.08
+EVET_KONTROL_BEKLEME = 0.6
+ADIM_BEKLEME = 0.15       # çekiç ve hançer tıklamaları arası
+YUKSELTME_BEKLEME = 0.45  # Evet'ten sonra sonucun oluşması için
 MAKS_YUKSELTME = 200      # tıklamalar işlemezse sonsuz döngüye girmemek için üst sınır
 TUR_HATA_SINIRI = 3       # arka arkaya kaç tur başarısız olursa durulacak
 
 # NPC'ye tıkladıktan sonra menünün açılması için beklenen süre (saniye).
 # Menü geç açılırsa sorun değil: "Marketi aç" düğmesi zaten çıkana kadar
 # aranıyor (ESYA_ARAMA_SURESI), bu yüzden burada beklemek şart değil.
-MENU_BEKLEME = 0.35
+MENU_BEKLEME = 0.5
 
 # NPC, market düğmesi ve envanterdeki eşyalar tek sol tık alır.
 # Bu sayı yalnızca envanter sekmesi için kullanılıyor.
 TIK_SAYISI = 2
-TIK_ARASI = 0.08
+TIK_ARASI = 0.1
 
 # Oyun arayüzü imleci kendi takip ettiği için önce taşıyıp bekliyoruz, sonra
 # basıp bırakıyoruz; anlık bas-bırak olaylarını arayüz kaçırabiliyor.
-FARE_TASIMA_BEKLEME = 0.07
-TIK_BASILI_KALMA = 0.04
+FARE_TASIMA_BEKLEME = 0.09
+TIK_BASILI_KALMA = 0.05
 
 # İmleç hedefe ışınlanmaz, küçük adımlarla kaydırılır (gerçek fare gibi)
-KAYDIRMA_ADIMI = 24        # her adımda en fazla kaç piksel
-KAYDIRMA_BEKLEME = 0.006   # adımlar arası bekleme (saniye)
+KAYDIRMA_ADIMI = 20        # her adımda en fazla kaç piksel
+KAYDIRMA_BEKLEME = 0.008   # adımlar arası bekleme (saniye)
 KAYDIRMA_MAKS_ADIM = 400   # sonsuz döngüye karşı üst sınır
 # Uzak hedeflerde yolun tamamı adım adım gidilmez: oyunun gerçek harekete
 # ihtiyacı hedefin yakınında, uzaktaki düz yol boşa zaman. İmleç önce hedefin
 # bu kadar yakınına ışınlanır, kalan mesafe adım adım kapatılır. 0 = kapalı
 # (tüm yol adımlanır, eski davranış).
-KAYDIRMA_YAKIN_MESAFE = 90
+KAYDIRMA_YAKIN_MESAFE = 110
 
 # Tıklama yöntemi: "sendinput" (gerçek fare olayı) veya "mesaj" (pencereye
 # doğrudan Windows mesajı). Arayüz düğmeleri birinde çalışmazsa diğerini dene.
@@ -133,7 +133,7 @@ TIK_YONTEMI = "sendinput"
 AKTIF_PENCERE = None  # odak kontrolü ve mesaj yöntemi için gereken pencere
 
 # Oyun tekrar öne alındıktan sonra girdi göndermeden önce beklenecek süre
-ODAK_SONRASI_BEKLEME = 0.15
+ODAK_SONRASI_BEKLEME = 0.2
 
 # Eşyaya kaç sağ tık ve tıklar arası bekleme (saniye)
 SAG_TIK_SAYISI = 5
@@ -141,10 +141,10 @@ SAG_TIK_ARASI = 0.7
 
 # Market düğmesi çıkmadıysa NPC tıklaması bulunana kadar tekrarlanır;
 # denemeler arası bu kadar beklenir (saniye)
-DENEME_ARASI = 0.2
+DENEME_ARASI = 0.3
 
 # --loop modunda turlar arası bekleme (saniye)
-BEKLEME = 0.8
+BEKLEME = 1.2
 
 SABLON_DOSYASI = Path(__file__).with_name("sablon_npc.png")
 MARKET_DOSYASI = Path(__file__).with_name("open-market.png")
