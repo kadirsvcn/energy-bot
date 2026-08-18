@@ -70,6 +70,15 @@ SEKME_BOLGESI = (36, 18)  # sekmenin yaklaşık boyutu (değişim kontrolü içi
 SEKMELER = (1,)         # sırayla gezilecek envanter sekmeleri (ilkine tıklanmaz)
 ENVANTER_ARAMA_SURESI = 5.0
 
+# Enerji parçası ayırma: 1. sekmenin ilk hücresindeki yığına shift+sol tık
+# bölme penceresini açar, Enter varsayılan miktarı onaylar, ayrılan parça
+# imlece yapışır ve tıklanan hücreye bırakılır.
+ENERJI_SHIFT_TIK_BEKLEME = 0.2   # shift+tık sonrası bölme penceresinin açılması için
+ENERJI_ENTER_BEKLEME = 0.25      # Enter sonrası parçanın imlece yapışması için
+
+# "Durdur"a basılana kadar enerji ayırma denemeleri arasında beklenecek süre
+ENERJI_DONGU_BEKLEME = 4.0
+
 # Envanter penceresi açılana kadar "ı" tuşuna basma.
 # Başlık, yarı saydam arka plandan etkilenmesin diye yalnızca yazı pikselleri
 # üzerinden aranıyor; bu eşiğin üstündeki gri değerler "yazı" sayılır.
@@ -270,6 +279,7 @@ TARAMA_KODLARI = {
     "ı": 0x17,     # Türkçe Q klavyede "ı" (US klavyede I tuşunun yeri)
     "i": 0x27,     # Türkçe Q klavyede "i" (US klavyede ; tuşunun yeri)
     "enter": 0x1C,
+    "shift": 0x2A,  # sol SHIFT
 }
 
 
@@ -1199,6 +1209,49 @@ def envanteri_tara(pencere, pencere_sablon, yeni_esya_sablon, hucre_sayisi=None)
     return True
 
 
+def _shift_sol_tik(x, y):
+    """SHIFT tuşunu basılı tutarak tek sol tık gönderir (yığın bölme penceresi için)."""
+    odak_saglama()
+    _tus_olayi(TARAMA_KODLARI["shift"], birakildi=False)
+    time.sleep(TUS_BASILI_KALMA)
+    try:
+        tek_sol_tik(x, y)
+    finally:
+        _tus_olayi(TARAMA_KODLARI["shift"], birakildi=True)
+
+
+def enerji_parcasi_ayir(pencere, envanter_pencere_sablon, hedef_index):
+    """1. sekmenin ilk hücresindeki enerji parçası yığınından bir parça ayırıp
+    ızgaradaki `hedef_index`. hücreye (envanter_hucreleri'nin yılan sırasına
+    göre) koyar.
+
+    Akış: kaynak hücreye (0. hücre) shift+sol tık (bölme penceresi açılır)
+    -> Enter (varsayılan miktar onaylanır, ayrılan parça imlece yapışır) ->
+    hedef hücreye sol tık (parça oraya bırakılır).
+    """
+    noktalar, skor = envanter_hucreleri(pencere, envanter_pencere_sablon)
+    if not noktalar:
+        print(f"  envanter başlığı bulunamadı (en iyi {skor:.2f}) - enerji parçası ayrılamadı")
+        return False
+    if hedef_index >= len(noktalar):
+        print(f"  ızgarada {hedef_index}. hücre yok (toplam {len(noktalar)}) - envanter dolu")
+        return False
+
+    kx, ky = noktalar[0]
+    print(f"  enerji parçası ({kx}, {ky}) -> shift + sol tık")
+    _shift_sol_tik(kx, ky)
+    time.sleep(ENERJI_SHIFT_TIK_BEKLEME)
+
+    print("  Enter -> bölme miktarı onaylanıyor")
+    tus_gonder("enter")
+    time.sleep(ENERJI_ENTER_BEKLEME)
+
+    hx, hy = noktalar[hedef_index]
+    print(f"  {hedef_index}. hücre ({hx}, {hy}) -> sol tık (yerleştir)")
+    tek_sol_tik(hx, hy)
+    return True
+
+
 def yukseltme_dongusu(pencere, hammer_sablon, esya_sablon, evet_sablon, esya_esigi):
     """Envanterdeki hançerler bitene kadar: çekiç -> hançer -> Evet.
 
@@ -1452,6 +1505,42 @@ def dongu_calistir(pencere, sablonlar, hancer_adedi, tur_sayisi=1,
     return tur
 
 
+def enerji_ayir_dongusu(pencere, envanter_pencere_sablon, bekleme=ENERJI_DONGU_BEKLEME):
+    """enerji_parcasi_ayir'ı durdurulana kadar `bekleme` saniyede bir tekrarlar.
+
+    Her turda ayrılan parça, ızgarada bir önceki turdan sonraki hücreye
+    (envanter_hucreleri'nin yılan sırasına göre) konur; 0. hücre kaynak
+    olduğu için hiç hedef seçilmez, sıra 1. hücreden başlar. Izgara dolunca
+    (enerji_parcasi_ayir hücre kalmadığını bildirince) döngü kendiliğinden
+    durur; bunun dışında durmaz, sadece kullanıcı durdurunca ya da fare
+    köşeye gidince biter.
+    """
+    tur = 0
+    hedef_index = 1
+    try:
+        while True:
+            if durduruldu():
+                print("Durduruldu.")
+                break
+            tur += 1
+            print(f"\n=== ENERJİ AYIRMA TUR {tur} (hedef hücre {hedef_index}) ===")
+            if not enerji_parcasi_ayir(pencere, envanter_pencere_sablon, hedef_index):
+                print("  enerji ayırma durdu.")
+                break
+            hedef_index += 1
+            if durduruldu():
+                print("Durduruldu.")
+                break
+            time.sleep(bekleme)
+    except pyautogui.FailSafeException:
+        print("\nFailSafe: fare köşeye gitti, durduruldu.")
+    except KeyboardInterrupt:
+        print("\nDurduruldu.")
+
+    print(f"Bitti ({tur} tur).")
+    return tur
+
+
 def main():
     global TIK_YONTEMI, AKTIF_PENCERE, TIK_BASILI_KALMA
 
@@ -1485,6 +1574,8 @@ def main():
                         help="şablonu bulup tıklar ve kaybolup kaybolmadığını bildirir")
     parser.add_argument("--hover-testi", metavar="DOSYA.png",
                         help="imleci hedefe götürüp düğmenin görüntüsü değişiyor mu ölçer")
+    parser.add_argument("--enerji-ayir", action="store_true",
+                        help="1. sekmedeki enerji parçasını ayırıp ilk boş hücreye yerleştirir")
     parser.add_argument("--tik-yontemi", choices=("sendinput", "mesaj"), default=TIK_YONTEMI,
                         help="tıklama yöntemi: sendinput (varsayılan) veya mesaj")
     parser.add_argument("--basili-sure", type=float, default=TIK_BASILI_KALMA,
@@ -1559,7 +1650,18 @@ def main():
         tik_testi(pencere, args.tik_testi)
         return
 
-
+    if args.enerji_ayir:
+        envanter_sablon = gorsel_sablon_yukle(ENVANTER_PENCERE_DOSYASI, "Envanter penceresi",
+                                              args.envanter_esik)
+        if envanter_sablon is None:
+            return
+        odakla(pencere)
+        time.sleep(0.5)
+        if args.loop:
+            enerji_ayir_dongusu(pencere, envanter_sablon)
+        else:
+            enerji_parcasi_ayir(pencere, envanter_sablon, hedef_index=1)
+        return
 
     _, sablonlar = hazirla(args.pencere, args.esik, args.market_esik,
                            args.esya_esik, args.envanter_esik, args.ekran)

@@ -11,6 +11,7 @@ Botun ekrana yazdığı her şey alttaki kayıt kutusuna düşer.
 import ctypes
 import queue
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -111,6 +112,9 @@ class Arayuz:
         self.kapat_dugmesi = ttk.Button(dugmeler, text="Kapat", command=self.botu_kapat,
                                         state="disabled")
         self.kapat_dugmesi.pack(side="left", padx=(0, 6))
+        self.enerji_dugmesi = ttk.Button(dugmeler, text="Enerji Parçası Ayır",
+                                         command=self.enerji_ayir)
+        self.enerji_dugmesi.pack(side="left", padx=(0, 6))
         ttk.Button(dugmeler, text="Kaydı temizle", command=self.temizle).pack(side="left")
 
         self.durum = tk.StringVar(value="Hazır")
@@ -222,6 +226,7 @@ class Arayuz:
         self.baslat_dugmesi.configure(state="disabled")
         self.duraklat_dugmesi.configure(state="normal", text=DURAKLAT_YAZISI)
         self.kapat_dugmesi.configure(state="normal")
+        self.enerji_dugmesi.configure(state="disabled")
         self.durum.set(f"Çalışıyor - {self.calisma_bilgisi}")
 
         self.is_parcacigi = threading.Thread(
@@ -246,6 +251,58 @@ class Arayuz:
     def bitti(self):
         self.baslat_dugmesi.configure(state="normal")
         self.duraklat_dugmesi.configure(state="disabled", text=DURAKLAT_YAZISI)
+        self.kapat_dugmesi.configure(state="disabled")
+        self.enerji_dugmesi.configure(state="normal")
+        self.durum.set("Kapatıldı" if bot.durdurma_istendi() else "Bitti")
+
+    def enerji_ayir(self):
+        """1. sekmedeki enerji parçasını ayırıp ilk boş hücreye yerleştirir (tek seferlik)."""
+        if self.bot_calisiyor():
+            return
+
+        ekran_no = self.ekran_no_al()
+
+        bot.durdurmayi_sifirla()
+        self.baslat_dugmesi.configure(state="disabled")
+        self.enerji_dugmesi.configure(state="disabled")
+        self.kapat_dugmesi.configure(state="normal")
+        self.durum.set("Enerji parçası ayrılıyor... (her"
+                        f" {bot.ENERJI_DONGU_BEKLEME:g} sn'de bir, 'Kapat'a kadar)")
+
+        self.is_parcacigi = threading.Thread(
+            target=self.enerji_ayir_calis, args=(ekran_no,), daemon=True)
+        self.is_parcacigi.start()
+
+    def enerji_ayir_calis(self, ekran_no):
+        import contextlib
+        yazici = Yazici(self.kuyruk)
+        try:
+            with contextlib.redirect_stdout(yazici):
+                pencere = bot.pencere_bul(bot.PENCERE_ADI, ekran_no)
+                if pencere is None:
+                    print(f"'{bot.PENCERE_ADI}' penceresi bulunamadı. Oyun açık mı?\n")
+                    return
+                bot.AKTIF_PENCERE = pencere
+
+                envanter_sablon = bot.gorsel_sablon_yukle(
+                    bot.ENVANTER_PENCERE_DOSYASI, "Envanter penceresi",
+                    bot.ENVANTER_PENCERE_ESIGI)
+                if envanter_sablon is None:
+                    return
+
+                if not bot.odakla(pencere):
+                    print("  ! Pencere öne getirilemedi.")
+                    return
+                time.sleep(0.5)
+                bot.enerji_ayir_dongusu(pencere, envanter_sablon)
+        except Exception as hata:  # arayüz çökmesin, sebebi kayda düşsün
+            self.kuyruk.put(f"\n! Hata: {hata}\n")
+        finally:
+            self.kok.after(0, self.enerji_ayir_bitti)
+
+    def enerji_ayir_bitti(self):
+        self.baslat_dugmesi.configure(state="normal")
+        self.enerji_dugmesi.configure(state="normal")
         self.kapat_dugmesi.configure(state="disabled")
         self.durum.set("Kapatıldı" if bot.durdurma_istendi() else "Bitti")
 
