@@ -1252,8 +1252,42 @@ def enerji_parcasi_ayir(pencere, envanter_pencere_sablon, hedef_index):
     return True
 
 
-def yukseltme_dongusu(pencere, hammer_sablon, esya_sablon, evet_sablon, esya_esigi):
+def esyayi_hucre_sirasiyla_bul(pencere, envanter_pencere_sablon, esya_sablon, esik, kare):
+    """Eşyayı ızgaradaki 1. hücreden başlayarak yılan sırasıyla arar.
+
+    goruntu_bul tüm pencerede en iyi eşleşmeyi bulur; envanterde aynı eşyadan
+    birden fazla varsa hangisinin seçildiği turdan tura skor farklarına göre
+    değişebilir (rastgele seçiyormuş gibi görünür). Bunun yerine ızgara
+    hücreleri sırayla (envanter_hucreleri'nin yılan sırasıyla) tek tek
+    denenir; eşik üstü eşleşen İLK hücre alınır, böylece işlem hep 1.
+    hücreden başlayıp sırayla ilerler.
+    """
+    noktalar, baslik_skor = envanter_hucreleri(pencere, envanter_pencere_sablon)
+    if not noktalar:
+        return None, None, baslik_skor
+
+    gri = cv2.cvtColor(kare, cv2.COLOR_RGB2GRAY)
+    yari = IZGARA_ADIMI // 2
+    for x, y in noktalar:
+        ust = y - pencere.top - yari
+        sol = x - pencere.left - yari
+        parca = gri[max(0, ust):ust + IZGARA_ADIMI, max(0, sol):sol + IZGARA_ADIMI]
+        if parca.shape[0] < esya_sablon.shape[0] or parca.shape[1] < esya_sablon.shape[1]:
+            continue
+        skor = float(cv2.matchTemplate(parca, esya_sablon, cv2.TM_CCOEFF_NORMED).max())
+        if skor >= esik:
+            return x, y, skor
+
+    return None, None, 0.0
+
+
+def yukseltme_dongusu(pencere, envanter_pencere_sablon, hammer_sablon, esya_sablon,
+                      evet_sablon, esya_esigi):
     """Envanterdeki hançerler bitene kadar: çekiç -> hançer -> Evet.
+
+    Hançer, ızgarada 1. hücreden başlayarak yılan sırasıyla seçilir (bkz.
+    esyayi_hucre_sirasiyla_bul); birden fazla hançer varken hangisinin
+    işleneceği rastgele değişmez.
 
     Bir tur takılırsa (tıklama arayüz yerine dünyaya gitmiş olabilir) ESC ile
     onay penceresi kapatılıp sıradaki tura geçilir; arka arkaya TUR_HATA_SINIRI
@@ -1269,7 +1303,8 @@ def yukseltme_dongusu(pencere, hammer_sablon, esya_sablon, evet_sablon, esya_esi
 
         # Tek ekran görüntüsünden ikisini birden arıyoruz (fazladan kare almıyoruz)
         kare = pencere_goruntusu(pencere)
-        ex, ey, eskor = goruntu_bul(pencere, esya_sablon, esya_esigi, kare)
+        ex, ey, eskor = esyayi_hucre_sirasiyla_bul(pencere, envanter_pencere_sablon,
+                                                   esya_sablon, esya_esigi, kare)
         if ex is None:
             print(f"  envanterde {ESYA_DOSYASI.name} kalmadı (en iyi {eskor:.2f})"
                   f" - yükseltme bitti, sökülen: {basarili}")
@@ -1335,7 +1370,8 @@ def sekmeleri_isle(pencere, envanter_pencere_sablon, hammer_sablon, esya_sablon,
         if not envanteri_tara(pencere, envanter_pencere_sablon, yeni_esya_sablon,
                               hancer_adedi):
             return False
-        if not yukseltme_dongusu(pencere, hammer_sablon, esya_sablon, evet_sablon, esya_esigi):
+        if not yukseltme_dongusu(pencere, envanter_pencere_sablon, hammer_sablon,
+                                 esya_sablon, evet_sablon, esya_esigi):
             return False
 
     if durduruldu():
